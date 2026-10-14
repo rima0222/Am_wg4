@@ -114,6 +114,7 @@ stub = tempfile.mkdtemp(); state = os.path.join(stub, "state")
 open(os.path.join(stub, "tc"), "w").write(f"""#!/usr/bin/env bash
 case "$1 $2" in
  "qdisc show") [ -f {state} ] && cat {state} || echo "qdisc noqueue";;
+ "qdisc del") rm -f {state};;
  "qdisc replace") if [[ "$*" == *cake* ]]; then echo "qdisc cake 8001: root" > {state}; else echo "qdisc fq_codel 8001: root" > {state}; fi;;
 esac
 """)
@@ -123,7 +124,11 @@ for f in ("tc", "ip", "curl"): os.chmod(os.path.join(stub, f), 0o755)
 os.environ["PATH"] = stub + ":" + os.environ["PATH"]
 env_file = Path(tempfile.mktemp()); env_file.write_text("PANEL_PORT=8787\nOTHER=keep\n")
 config.ENV_FILE = env_file
+# default is OFF: nothing is shaped until the admin opts in
+g0 = c.get("/api/admin/qos", headers=H).json(); assert g0["enabled"] is False and g0["mode"] == "none", g0
 r = c.put("/api/admin/qos", json={"bandwidth_mbit": 200}, headers=H); assert r.status_code == 200, r.text
+assert r.json()["mode"] == "none" and r.json()["enabled"] is False, r.json()   # speed saved but still off
+r = c.put("/api/admin/qos", json={"bandwidth_mbit": 200, "enabled": True}, headers=H); assert r.status_code == 200, r.text
 assert r.json()["mode"] == "cake" and r.json()["applied_rate_mbit"] == 180, r.json()
 txt = env_file.read_text(); assert "AWG_BANDWIDTH_MBIT=200" in txt and "OTHER=keep" in txt
 g = c.get("/api/admin/qos", headers=H).json(); assert g["bandwidth_mbit"] == 200 and g["mode"] == "cake", g
@@ -140,7 +145,7 @@ case "$1 $2 $3" in
  "-s qdisc show") echo "qdisc cake 8001: root refcnt 2 bandwidth 100Mbit"; echo " Sent 1000 bytes 10 pkt (dropped 7, overlimits 0 requeues 0)"; echo " backlog 3000b 2p requeues 0"; echo "  av_delay 4.5ms";;
 esac
 """)
-c.put("/api/admin/qos", json={"bandwidth_mbit": 100}, headers=H)   # shaped line = 90 Mbit/s
+c.put("/api/admin/qos", json={"bandwidth_mbit": 100, "enabled": True}, headers=H)   # shaped line = 90 Mbit/s
 awg.dump = lambda: {k: dict(v) for k, v in live.items()}  # undo the slow_dump used in check 9
 pubkey_b = [p for p in live][0]
 live[pubkey_b].update({"rx": 0, "tx": 0})
@@ -152,6 +157,11 @@ assert bw["mode"] == "cake" and bw["line_mbit"] == 90, bw
 assert bw["users"] and bw["users"][0]["down_mbit"] > 60 and bw["busy"] is True and bw["users"][0]["limited"] is True, bw
 assert bw["queue"]["drops"] == 7 and bw["queue"]["backlog_bytes"] == 3000 and bw["queue"]["avg_delay_ms"] == 4.5, bw["queue"]
 print("CHECK 12 ok: live bandwidth view: per-user rates, utilization, 'slowed' flag, queue drops/delay")
+# switching OFF removes the qdisc again (back to original behaviour)
+r = c.put("/api/admin/qos", json={"enabled": False}, headers=H).json()
+assert r["mode"] == "none" and r["enabled"] is False, r
+assert c.get("/api/admin/qos", headers=H).json()["mode"] == "none"
+print("CHECK 13 ok: default OFF; switch ON/OFF applies live and OFF restores the original (no qdisc)")
 print("\nROUND 3 ALL PASSED")
 
 # rename (display name only) - separate section appended after the main checks

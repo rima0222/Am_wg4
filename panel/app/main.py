@@ -879,6 +879,7 @@ QOS_SCRIPT = Path(__file__).resolve().parent.parent / "ops" / "qos.sh"
 
 class QosRequest(BaseModel):
     bandwidth_mbit: Optional[int] = None  # None/0 = auto-detect / unknown
+    enabled: Optional[bool] = None        # master switch; None = leave as is
 
 
 def _qos_run(action: str) -> dict:
@@ -890,7 +891,8 @@ def _qos_run(action: str) -> dict:
         return {"mode": "none", "error": str(e)}
     info = dict(kv.split("=", 1) for kv in out.split() if "=" in kv)
     return {"mode": info.get("mode", "none"), "applied_rate_mbit": int(info.get("rate", "0") or 0),
-            "auto_mbit": int(info.get("auto", "0") or 0)}
+            "auto_mbit": int(info.get("auto", "0") or 0),
+            "enabled": info.get("enabled", "0") == "1"}
 
 
 def _set_env_key(key: str, value):
@@ -929,6 +931,8 @@ def set_qos(body: QosRequest, _=Depends(auth.require_admin)):
     m = body.bandwidth_mbit or 0
     if m < 0 or m > 100000:
         raise HTTPException(400, "Speed must be between 1 and 100000 Mbit/s (0 = auto)")
+    if body.enabled is not None:
+        _set_env_key("AWG_QOS_ENABLED", "1" if body.enabled else "0")
     _set_env_key("AWG_BANDWIDTH_MBIT", m if m else None)
     # a number = use it; empty = forget it and let the server measure its own line speed
     res = _qos_run("apply" if m else "remeasure")

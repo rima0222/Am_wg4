@@ -555,6 +555,7 @@ async function submitSettings() {
 }
 
 function qosText(q) {
+  if (!q.enabled) return "Off: traffic is not shaped (original behaviour).";
   if (q.mode === "cake") return `Active: per-user fair sharing (cake) at ${q.applied_rate_mbit || "?"} Mbit/s` +
     (q.bandwidth_mbit ? " (your value)." : ` (measured automatically: ${q.auto_mbit} Mbit/s).`);
   if (q.mode === "fq_codel") return "Active: basic fair queueing. The server will measure its line speed automatically when no one is using it (checked every ~10 min), or enter it above.";
@@ -566,6 +567,7 @@ async function loadQos() {
   if (!res.ok) return;
   const q = await res.json();
   document.getElementById("qos-mbit").value = q.bandwidth_mbit || "";
+  document.getElementById("qos-enabled").checked = !!q.enabled;
   document.getElementById("qos-status").textContent = qosText(q);
 }
 
@@ -573,7 +575,7 @@ async function saveQos() {
   const v = parseInt(document.getElementById("qos-mbit").value, 10) || 0;
   const el = document.getElementById("qos-status");
   el.textContent = "Applying...";
-  const res = await fetch("/api/admin/qos", { method: "PUT", headers: authHeaders(), body: JSON.stringify({ bandwidth_mbit: v }) });
+  const res = await fetch("/api/admin/qos", { method: "PUT", headers: authHeaders(), body: JSON.stringify({ bandwidth_mbit: v, enabled: document.getElementById("qos-enabled").checked }) });
   const q = await res.json();
   el.textContent = res.ok ? qosText(q) : (q.detail || "Failed");
 }

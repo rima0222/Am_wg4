@@ -17,6 +17,7 @@ envget() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-; }
 IFACE="$(envget AWG_INTERFACE)"; IFACE="${IFACE:-awg0}"
 MBIT="$(envget AWG_BANDWIDTH_MBIT)"      # set by the admin (wins over everything)
 AUTO="$(envget AWG_BANDWIDTH_AUTO)"      # measured by this script (cached)
+ENABLED="$(envget AWG_QOS_ENABLED)"      # OFF unless the admin switches it on in the panel
 SPEED_URL="${AWG_SPEEDTEST_URL:-https://speed.cloudflare.com/__up}"
 
 set_env_key() {   # atomic edit of one KEY=VALUE in the env file ("" = remove)
@@ -69,8 +70,15 @@ detect_mbit() {
   [[ "$sp" =~ ^[0-9]+$ ]] && [ "$sp" -gt 0 ] && echo "$sp"
 }
 
+remove_qdisc() {
+  # back to the kernel default: exactly the behaviour before fair sharing existed
+  tc qdisc del dev "$IFACE" root 2>/dev/null || true
+  echo "mode=none rate=0 auto=${AUTO:-0} enabled=0"
+}
+
 apply() {
   ip link show "$IFACE" >/dev/null 2>&1 || exit 0
+  [ "$ENABLED" = "1" ] || { remove_qdisc; return 0; }
   local m="$MBIT" rate
   if [ -z "$m" ] && [ -z "$AUTO" ]; then
     # nothing configured: learn the line speed once, but only while the tunnel is quiet
@@ -89,12 +97,12 @@ apply() {
   if [ "$rate" -gt 0 ]; then
     # 'oceanic' = queue tuned for ~300 ms RTT (far-away users)
     if tc qdisc replace dev "$IFACE" root cake bandwidth "${rate}mbit" besteffort dual-dsthost nonat nowash oceanic 2>/dev/null; then
-      echo "mode=cake rate=${rate} auto=${AUTO:-0}"; return 0
+      echo "mode=cake rate=${rate} auto=${AUTO:-0} enabled=1"; return 0
     fi
   fi
   # no speed known (or cake missing in this kernel): per-flow fairness + latency control only
   if tc qdisc replace dev "$IFACE" root fq_codel 2>/dev/null; then
-    echo "mode=fq_codel rate=0 auto=${AUTO:-0}"; return 0
+    echo "mode=fq_codel rate=0 auto=${AUTO:-0} enabled=1"; return 0
   fi
   echo "mode=none rate=0"; return 1
 }
@@ -103,13 +111,17 @@ case "${1:-ensure}" in
   apply)  apply ;;
   ensure)
     m="$(mode_now)"
+    if [ "$ENABLED" != "1" ]; then
+      [ "$m" = "none" ] && echo "mode=none enabled=0" || remove_qdisc
+      exit 0
+    fi
     if [ "$m" = "none" ]; then apply
     elif [ "$m" = "fq_codel" ] && [ -z "$MBIT" ] && [ -z "$AUTO" ]; then
       # still waiting for a line-speed measurement: retry at most every 10 minutes
       stamp="/run/awg-qos.try"
       if [ ! -f "$stamp" ] || [ -n "$(find "$stamp" -mmin +10 2>/dev/null)" ]; then touch "$stamp" 2>/dev/null; apply; else echo "mode=$m"; fi
     else echo "mode=$m"; fi ;;
-  status) echo "mode=$(mode_now) rate=${MBIT:-0} auto=${AUTO:-0}" ;;
+  status) echo "mode=$(mode_now) rate=${MBIT:-0} auto=${AUTO:-0} enabled=${ENABLED:-0}" ;;
   remeasure) set_env_key AWG_BANDWIDTH_AUTO ""; AUTO=""; MBIT=""; apply ;;
   *) echo "usage: $0 apply|ensure|status|remeasure" >&2; exit 2 ;;
 esac
