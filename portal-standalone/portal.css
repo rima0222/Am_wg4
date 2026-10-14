@@ -1,0 +1,64 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg: #0b0e14; --surface: #10141d; --surface-2: #161b26; --border: #232a38;
+  --text: #e4e8f1; --text-dim: #7c879b;
+  --accent: #57e6c8; --accent-dim: #57e6c833;
+  --warn: #f2b26a; --danger: #f2657d;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --sans: 'IBM Plex Sans', -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; font-family: var(--sans); background: var(--bg); color: var(--text);
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.hidden { display: none !important; }
+.mono { font-family: var(--mono); }
+.wrap { width: 100%; display: flex; justify-content: center; padding: 20px; }
+.card {
+  width: 340px; padding: 26px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);
+}
+h1 { font-size: 17px; font-weight: 600; margin: 6px 0 18px; }
+
+input {
+  width: 100%; padding: 9px 11px; margin: 6px 0; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px;
+}
+textarea {
+  width: 100%; padding: 9px 11px; margin: 10px 0; border-radius: 4px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  font-family: var(--mono); font-size: 11px;
+}
+button {
+  cursor: pointer; border: 1px solid var(--border); border-radius: 4px; padding: 9px 14px;
+  font-size: 13px; font-weight: 500; background: var(--surface-2); color: var(--text); margin-top: 8px;
+}
+.btn-primary { background: var(--accent); color: #06231d; border-color: var(--accent); font-weight: 600; }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
+.btn-sm { padding: 4px 9px; font-size: 12px; margin-top: 0; }
+.btn-block { width: 100%; }
+
+.error { color: var(--danger); font-size: 12px; min-height: 16px; }
+.hint { color: var(--text-dim); font-size: 11px; margin-top: 10px; text-align: center; }
+
+.status-row { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-dim); }
+.status-dot.online { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+.metric { margin: 16px 0; }
+.metric-label { font-size: 11px; color: var(--text-dim); margin-bottom: 6px; }
+.metric-value { font-size: 13px; }
+.days-track { height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-bottom: 6px; }
+.days-fill { height: 100%; background: var(--accent); }
+.days-fill.warn { background: var(--warn); }
+.days-fill.danger { background: var(--danger); }
+
+.ring-wrap { display: flex; justify-content: center; margin: 18px 0; }
+.ring-wrap svg text.ring-main { fill: var(--text); font-size: 15px; font-family: var(--mono); font-weight: 600; }
+.ring-wrap svg text.ring-sub { fill: var(--text-dim); font-size: 9px; font-family: var(--sans); }
+.ring-wrap svg text.ring-used { fill: var(--text-dim); font-size: 8px; font-family: var(--mono); }
+
+.divider { height: 1px; background: var(--border); margin: 18px 0; }
+.qr-wrap { display: flex; justify-content: center; margin-bottom: 10px; }
+.qr-wrap img { width: 190px; height: 190px; border-radius: 4px; background: #fff; padding: 8px; }

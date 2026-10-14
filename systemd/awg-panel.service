@@ -1,0 +1,21 @@
+[Unit]
+Description=AmneziaWG Management Panel
+After=network.target awg-quick@awg0.service
+Wants=awg-quick@awg0.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/awg-panel/panel.env
+WorkingDirectory=/opt/awg-panel
+ExecStart=/opt/awg-panel/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port ${PANEL_PORT} --timeout-keep-alive 10 --app-dir /opt/awg-panel --ssl-keyfile /etc/awg-panel/key.pem --ssl-certfile /etc/awg-panel/cert.pem
+Restart=always
+RestartSec=3
+User=root
+Environment=MALLOC_ARENA_MAX=2
+MemoryHigh=160M
+MemoryMax=300M
+TasksMax=256
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

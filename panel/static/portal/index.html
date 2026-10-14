@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My VPN Account</title>
+<link rel="stylesheet" href="portal.css?v=4">
+</head>
+<body>
+
+<div id="login-view" class="wrap">
+  <div class="card">
+    <h1>My account</h1>
+    <input id="p-username" placeholder="Username" autocomplete="username">
+    <input id="p-password" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="btn-primary btn-block" onclick="portalLogin()">Sign in</button>
+    <p id="p-error" class="error"></p>
+    <p class="hint" id="p-source"></p>
+  </div>
+</div>
+
+<div id="status-view" class="wrap hidden">
+  <div class="card">
+    <div class="status-row">
+      <span class="status-dot" id="p-dot"></span>
+      <span id="p-online-label">—</span>
+      <button class="btn-ghost btn-sm" style="margin-right:auto" onclick="portalLogout()">Sign out</button>
+    </div>
+    <h1 id="p-name">—</h1>
+
+    <div class="ring-wrap" id="p-ring-wrap"></div>
+
+    <div class="metric">
+      <div class="metric-label">Time remaining</div>
+      <div class="days-track"><div class="days-fill" id="p-days-fill"></div></div>
+      <div class="metric-value mono" id="p-time-text">—</div>
+    </div>
+
+    <div class="divider"></div>
+    <button class="btn-primary btn-block" onclick="showConfig()">Get config / QR</button>
+  </div>
+</div>
+
+<div id="config-view" class="wrap hidden">
+  <div class="card">
+    <h1>Your config</h1>
+    <div class="qr-wrap"><img id="p-qr"></div>
+    <textarea id="p-config-text" readonly rows="12"></textarea>
+    <button class="btn-primary btn-block" onclick="copyPortalConfig()">Copy</button>
+    <button class="btn-primary btn-block" onclick="downloadPortalConfig()">Download .conf</button>
+    <button class="btn-ghost btn-block" onclick="backToStatus()">Back</button>
+  </div>
+</div>
+
+<script src="portal.js?v=4"></script>
+</body>
+</html>

@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AmneziaWG Panel</title>
+<link rel="stylesheet" href="style.css?v=11">
+</head>
+<body>
+
+<div id="login-screen" class="screen">
+  <div class="login-box">
+    <div class="brand">AWG · Panel</div>
+    <h1>Admin sign in</h1>
+    <input id="login-username" placeholder="Username" autocomplete="username">
+    <input id="login-password" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="btn-primary btn-block" style="margin-top:10px" onclick="doLogin()">Sign in</button>
+    <p id="login-error" class="error"></p>
+  </div>
+</div>
+
+<div id="app-screen" class="screen hidden">
+  <header class="topbar">
+    <div class="brand-block">
+      <span class="brand">AWG · Panel</span>
+      <span class="endpoint" id="endpoint-label">—</span>
+    </div>
+    <div class="gauge">
+      <span class="label">CPU</span>
+      <span class="track"><span class="fill" id="cpu-fill"></span></span>
+      <span class="value mono" id="cpu-value">—</span>
+    </div>
+    <div class="gauge">
+      <span class="label">RAM</span>
+      <span class="track"><span class="fill" id="ram-fill"></span></span>
+      <span class="value mono" id="ram-value">—</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn-ghost btn-sm" onclick="openServerModal()">Server</button>
+      <button class="btn-ghost btn-sm" onclick="openBackupModal()">Backup</button>
+      <button class="btn-ghost btn-sm" onclick="openSettingsModal()">Settings</button>
+      <button class="btn-ghost btn-sm" onclick="logout()">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="summary-strip">
+      <div class="summary-group">
+        <div class="summary-item"><span class="k">Users</span><span class="v" id="stat-total">—</span></div>
+        <div class="summary-item"><span class="k">Online</span><span class="v" id="stat-online">—</span></div>
+        <div class="summary-item v-big"><span class="k">Total traffic (all time)</span><span class="v" id="stat-traffic">—</span></div>
+        <svg id="sparkline" class="sparkline" width="180" height="34" viewBox="0 0 180 34"></svg>
+      </div>
+      <div class="summary-group summary-group-rings">
+        <div class="ring-stat" id="ring-today"></div>
+        <div class="ring-stat" id="ring-month"></div>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <h2>Users <span class="count" id="users-count"></span></h2>
+      <div class="toolbar">
+        <button class="btn-primary btn-sm" onclick="openCreateModal()">+ Add user</button>
+        <button class="btn-ghost btn-sm" onclick="loadPeers()">Refresh</button>
+      </div>
+    </div>
+
+    <div class="filter-row">
+      <input id="search-box" class="search-box" placeholder="Search name, note, IP, account #, portal username…" oninput="onSearchInput()">
+      <div class="sort-tabs" id="sort-tabs">
+        <button class="tab active" data-sort="">Newest</button>
+        <button class="tab" data-sort="usage_desc">Most used</button>
+        <button class="tab" data-sort="usage_asc">Least used</button>
+        <button class="tab" data-sort="days_asc">Expiring soon</button>
+        <button class="tab" data-sort="days_desc">Most time left</button>
+        <button class="tab" data-sort="name_asc">Name (A–Z)</button>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>#</th>
+          <th>Name / Label</th>
+          <th>IP</th>
+          <th>Volume left</th>
+          <th>Time left</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="peers-body"></tbody>
+    </table>
+  </main>
+</div>
+
+<!-- create user -->
+<div id="create-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Add user</h2>
+    <label>Name</label>
+    <input id="new-name" placeholder="e.g. ali">
+    <label>Label / note (admin-only, optional)</label>
+    <input id="new-note" placeholder="e.g. friend, reseller-a, ...">
+    <div class="field-row">
+      <div>
+        <label>Data limit (GB, empty = unlimited)</label>
+        <input id="new-limit" type="number" step="0.1" placeholder="e.g. 50">
+      </div>
+      <div>
+        <label>Duration (days, empty = unlimited)</label>
+        <input id="new-days" type="number" placeholder="e.g. 30">
+      </div>
+    </div>
+    <p class="hint">Duration also sets what "Reset" restores the user to later.</p>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="submitCreate()">Create</button>
+      <button class="btn-ghost" onclick="closeModal('create-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- config / qr -->
+<div id="config-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Client config</h2>
+    <div id="portal-creds-box"></div>
+    <div class="qr-wrap"><img id="config-qr"></div>
+    <textarea id="config-text" readonly rows="13"></textarea>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="copyConfig()">Copy</button>
+      <button class="btn-primary" onclick="downloadConfig()">Download .conf</button>
+      <button class="btn-ghost" onclick="closeModal('config-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- adjust plan -->
+<div id="adjust-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Adjust plan</h2>
+    <p class="hint">Use negative numbers to subtract.</p>
+    <label>Add / remove data (GB)</label>
+    <input id="adjust-gb" type="number" step="0.1" placeholder="e.g. 10 or -5">
+    <label>Add / remove time (days)</label>
+    <input id="adjust-days" type="number" placeholder="e.g. 7 or -3">
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="submitAdjust()">Apply</button>
+      <button class="btn-ghost" onclick="closeModal('adjust-modal')">Cancel</button>
+    </div>
+
+    <div class="divider"></div>
+    <h2>Set data limit directly</h2>
+    <p class="hint">Switch this user between unlimited and a fixed cap (instead of adding/removing).</p>
+    <label style="display:flex;align-items:center;gap:6px;">
+      <input type="checkbox" id="adjust-unlimited" style="width:auto;margin:0;" onchange="onUnlimitedToggle()">
+      Unlimited (no data cap)
+    </label>
+    <label>Exact limit (GB)</label>
+    <input id="adjust-set-limit" type="number" step="0.1" placeholder="e.g. 50">
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="submitSetLimit()">Save limit</button>
+      <button class="btn-ghost" onclick="closeModal('adjust-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- label edit -->
+<div id="label-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Edit user</h2>
+    <p class="hint">Renaming is safe: the user stays connected with their existing config.</p>
+    <label>Name</label>
+    <input id="label-name" placeholder="user name">
+    <p class="hint">Label below is only visible to you (admin) — never shown to the user.</p>
+    <label>Label / note</label>
+    <input id="label-input" placeholder="e.g. friend, reseller-a, ...">
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="submitLabel()">Save</button>
+      <button class="btn-ghost" onclick="closeModal('label-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- portal credentials -->
+<div id="credentials-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Portal login</h2>
+    <p class="hint">This is what the user enters at /portal to check their usage and grab their config.</p>
+    <div class="credential-box" id="credentials-current"></div>
+    <div class="divider"></div>
+    <label>Set custom username (optional)</label>
+    <div class="field-row">
+      <input id="cred-username" placeholder="leave empty to auto-generate">
+    </div>
+    <label>Set custom password (optional)</label>
+    <div class="field-row">
+      <input id="cred-password" placeholder="leave empty to auto-generate">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="submitCredentials()">Save / regenerate</button>
+      <button class="btn-ghost" onclick="closeModal('credentials-modal')">Close</button>
+    </div>
+    <div id="credentials-result"></div>
+  </div>
+</div>
+
+<!-- settings: admin credentials + server domain -->
+<div id="settings-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Admin settings</h2>
+    <label>Current password</label>
+    <input id="settings-current-pass" type="password">
+    <label>New username (optional)</label>
+    <input id="settings-new-user" placeholder="leave empty to keep current">
+    <label>New password (optional)</label>
+    <input id="settings-new-pass" type="password" placeholder="leave empty to keep current">
+    <p id="settings-error" class="error"></p>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="submitSettings()">Save</button>
+      <button class="btn-ghost" onclick="closeModal('settings-modal')">Cancel</button>
+    </div>
+    <div class="divider"></div>
+    <h2>Server domain / address</h2>
+    <p class="hint">The address written into every client config's Endpoint line. Change this after moving to a new server or pointing a domain at it — takes effect immediately for new configs.</p>
+    <input id="settings-endpoint" placeholder="e.g. vpn.example.com or 1.2.3.4">
+    <p id="endpoint-error" class="error"></p>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="submitEndpoint()">Save address</button>
+    </div>
+  </div>
+</div>
+
+<!-- server monitor -->
+<div id="server-modal" class="modal hidden">
+  <div class="modal-box modal-wide">
+    <h2>Server monitor</h2>
+    <div id="server-overview"></div>
+    <div class="section-head" style="margin-top:14px">
+      <h2 style="margin:0;font-size:13px">Top processes</h2>
+      <div class="sort-tabs">
+        <button class="tab active" data-psort="mem" onclick="setProcSort('mem')">By RAM</button>
+        <button class="tab" data-psort="cpu" onclick="setProcSort('cpu')">By CPU</button>
+      </div>
+    </div>
+    <table class="srv-table">
+      <thead><tr><th>PID</th><th>Process</th><th>RAM</th><th>CPU</th><th></th></tr></thead>
+      <tbody id="server-procs"></tbody>
+    </table>
+    <p id="server-msg" class="hint"></p>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="freeMemory()">Clear cache</button>
+      <button class="btn-ghost" onclick="restartPanel()">Restart panel</button>
+      <button class="btn-primary" onclick="closeServerModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- backup / restore -->
+<div id="backup-modal" class="modal hidden">
+  <div class="modal-box">
+    <h2>Backup &amp; restore</h2>
+    <p class="hint">Backups are JSON files. Keys are preserved, so restoring on a new server keeps clients connected once the config's Endpoint line is updated — usage and time continue from where they left off.</p>
+    <button class="btn-primary btn-block" onclick="downloadBackup()">Download backup (.json)</button>
+    <div class="divider"></div>
+    <label>Restore from file</label>
+    <input id="restore-file" type="file" accept="application/json">
+    <button class="btn-ghost btn-block" style="margin-top:8px" onclick="submitRestore()">Restore</button>
+    <p id="backup-status" class="hint"></p>
+    <div class="modal-actions">
+      <button class="btn-ghost btn-block" onclick="closeModal('backup-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=11"></script>
+</body>
+</html>
