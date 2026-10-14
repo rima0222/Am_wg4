@@ -2,11 +2,11 @@
 #
 # AmneziaWG Panel - one-line installer
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/rima0222/Am_wg3/main/install.sh | sudo bash
+#   curl -fsSL https://raw.githubusercontent.com/rima0222/Am_wg4/main/install.sh | sudo bash
 #
 set -euo pipefail
 
-REPO_URL="${AWG_PANEL_REPO_URL:-https://github.com/rima0222/Am_wg3.git}"
+REPO_URL="${AWG_PANEL_REPO_URL:-https://github.com/rima0222/Am_wg4.git}"
 VERSION="${AWG_VERSION:-main}"
 INSTALL_DIR="/opt/awg-panel"
 ETC_DIR="/etc/awg-panel"

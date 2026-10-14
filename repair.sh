@@ -12,7 +12,7 @@
 # panel.env + the tunnel .conf match them. It does not restart the tunnel, so
 # connected users are not dropped.
 #
-# Usage:  curl -fsSL https://raw.githubusercontent.com/rima0222/Am_wg3/main/repair.sh | sudo bash
+# Usage:  curl -fsSL https://raw.githubusercontent.com/rima0222/Am_wg4/main/repair.sh | sudo bash
 #
 set -euo pipefail
 
