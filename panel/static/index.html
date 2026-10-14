@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AmneziaWG Panel</title>
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
@@ -221,6 +221,15 @@
       <button class="btn-ghost" onclick="closeModal('settings-modal')">Cancel</button>
     </div>
     <div class="divider"></div>
+    <h2>Fair bandwidth sharing</h2>
+    <p class="hint">No per-user caps. When the server is idle everyone gets full speed; when it is busy, bandwidth is shared fairly per user, so a heavy downloader cannot slow light users. Applied live - nobody is disconnected.</p>
+    <label>Server line speed (Mbit/s). Leave EMPTY to let the server measure it itself</label>
+    <input id="qos-mbit" type="number" min="0" placeholder="e.g. 100 or 1000">
+    <p id="qos-status" class="hint"></p>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveQos()">Apply</button>
+    </div>
+    <div class="divider"></div>
     <h2>Server domain / address</h2>
     <p class="hint">The address written into every client config's Endpoint line. Change this after moving to a new server or pointing a domain at it — takes effect immediately for new configs.</p>
     <input id="settings-endpoint" placeholder="e.g. vpn.example.com or 1.2.3.4">
@@ -236,6 +245,8 @@
   <div class="modal-box modal-wide">
     <h2>Server monitor</h2>
     <div id="server-overview"></div>
+    <div class="section-head" style="margin-top:14px"><h2 style="margin:0;font-size:13px">Bandwidth (live)</h2></div>
+    <div id="server-bw"></div>
     <div class="section-head" style="margin-top:14px">
       <h2 style="margin:0;font-size:13px">Top processes</h2>
       <div class="sort-tabs">
@@ -273,6 +284,6 @@
   </div>
 </div>
 
-<script src="app.js?v=11"></script>
+<script src="app.js?v=14"></script>
 </body>
 </html>

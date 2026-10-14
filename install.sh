@@ -147,7 +147,7 @@ tune_server_mtu() {
 
 install_watchdog() {
   log "Installing the panel watchdog (auto-recovers an unreachable panel)..."
-  chmod +x "${INSTALL_DIR}/ops/health.sh" 2>/dev/null || true
+  chmod +x "${INSTALL_DIR}/ops/health.sh" "${INSTALL_DIR}/ops/qos.sh" 2>/dev/null || true
   cat > /etc/systemd/system/awg-panel-health.service <<EOF
 [Unit]
 Description=AWG panel health check
@@ -187,6 +187,7 @@ if [ -f "${ETC_DIR}/panel.env" ] && [ -f "$CONF_PATH" ] && [ "${AWG_REINSTALL:-0
   install_watchdog
   ensure_swap
   tune_server_mtu
+  bash "${INSTALL_DIR}/ops/qos.sh" apply >/dev/null 2>&1 || true   # fair bandwidth sharing (live, no disconnects)
   sed -i 's/^PANEL_STATS_INTERVAL=2$/PANEL_STATS_INTERVAL=4/' "${ETC_DIR}/panel.env" 2>/dev/null || true
   # self-heal: if panel.env drifted from the running tunnel (the old re-install bug),
   # fix it now. A no-op when everything already agrees; never restarts the tunnel.
@@ -447,6 +448,7 @@ systemctl enable awg-panel >/dev/null 2>&1 || true
 systemctl restart awg-panel
 install_watchdog
 ensure_swap
+bash "${INSTALL_DIR}/ops/qos.sh" apply >/dev/null 2>&1 || true
 bash "${INSTALL_DIR}/ops/health.sh" >/dev/null 2>&1 || true
 
 # ---------- 11. firewall ----------

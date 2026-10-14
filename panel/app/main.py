@@ -871,6 +871,153 @@ def server_restart_panel(_=Depends(auth.require_admin)):
     return {"ok": True}
 
 
+# ============================================================
+# fair bandwidth sharing (tc cake/fq_codel on the tunnel) - see ops/qos.sh
+# ============================================================
+QOS_SCRIPT = Path(__file__).resolve().parent.parent / "ops" / "qos.sh"
+
+
+class QosRequest(BaseModel):
+    bandwidth_mbit: Optional[int] = None  # None/0 = auto-detect / unknown
+
+
+def _qos_run(action: str) -> dict:
+    env = {**os.environ, "AWG_ENV_FILE": str(config.ENV_FILE), "AWG_INTERFACE": config.INTERFACE}
+    try:
+        out = subprocess.run(["bash", str(QOS_SCRIPT), action], capture_output=True, text=True,
+                             timeout=20, env=env).stdout
+    except Exception as e:
+        return {"mode": "none", "error": str(e)}
+    info = dict(kv.split("=", 1) for kv in out.split() if "=" in kv)
+    return {"mode": info.get("mode", "none"), "applied_rate_mbit": int(info.get("rate", "0") or 0),
+            "auto_mbit": int(info.get("auto", "0") or 0)}
+
+
+def _set_env_key(key: str, value):
+    path = Path(config.ENV_FILE)
+    lines = path.read_text().splitlines() if path.exists() else []
+    lines = [ln for ln in lines if not ln.startswith(key + "=")]
+    if value not in (None, ""):
+        lines.append(f"{key}={value}")
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+@app.get("/api/admin/qos")
+def get_qos(_=Depends(auth.require_admin)):
+    res = _qos_run("status")
+    res["bandwidth_mbit"] = _read_bandwidth()
+    return res
+
+
+def _read_bandwidth() -> int:
+    try:
+        for ln in Path(config.ENV_FILE).read_text().splitlines():
+            if ln.startswith("AWG_BANDWIDTH_MBIT="):
+                return int(ln.split("=", 1)[1] or 0)
+    except (OSError, ValueError):
+        pass
+    return 0
+
+
+@app.put("/api/admin/qos")
+def set_qos(body: QosRequest, _=Depends(auth.require_admin)):
+    """Sets the server's real line speed (Mbit/s). Fairness is applied live: no user is
+    disconnected and nobody needs a new config."""
+    m = body.bandwidth_mbit or 0
+    if m < 0 or m > 100000:
+        raise HTTPException(400, "Speed must be between 1 and 100000 Mbit/s (0 = auto)")
+    _set_env_key("AWG_BANDWIDTH_MBIT", m if m else None)
+    # a number = use it; empty = forget it and let the server measure its own line speed
+    res = _qos_run("apply" if m else "remeasure")
+    res["bandwidth_mbit"] = m
+    return res
+
+
+# ---- live bandwidth view (who uses what, is fair-sharing kicking in?) ----
+_bw_lock = threading.Lock()
+_bw_prev = {"t": 0.0, "peers": {}}
+
+
+def _tc_queue_stats() -> dict:
+    """Reads the tunnel's queue counters (drops / backlog / delay) from `tc -s`."""
+    import re
+    try:
+        out = subprocess.run(["tc", "-s", "qdisc", "show", "dev", config.INTERFACE],
+                             capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return {}
+    def num(pat, cast=float):
+        m = re.search(pat, out)
+        return cast(m.group(1)) if m else None
+    return {
+        "drops": num(r"dropped (\d+)", int),
+        "backlog_bytes": num(r"backlog (\d+)b", int),
+        "avg_delay_ms": _to_ms(re.search(r"av_delay\s+([0-9.]+)(us|ms|s)", out)),
+    }
+
+
+def _to_ms(m):
+    if not m:
+        return None
+    v, unit = float(m.group(1)), m.group(2)
+    return round(v / 1000 if unit == "us" else v * 1000 if unit == "s" else v, 2)
+
+
+@app.get("/api/server/bandwidth")
+def server_bandwidth(_=Depends(auth.require_admin)):
+    """Per-user live speeds (from counter deltas between two polls) + whether the fair-sharing
+    queue is under pressure. 'limited' = server is near its line speed AND this user is using
+    more than an equal share, i.e. exactly the users fair-sharing slows down."""
+    live = awg.dump()
+    now = time.time()
+    with database.cursor() as cur:
+        cur.execute("SELECT id, name, public_key FROM peers")
+        by_pub = {r["public_key"]: (r["id"], r["name"]) for r in cur.fetchall()}
+
+    with _bw_lock:
+        dt = now - _bw_prev["t"]
+        prev = _bw_prev["peers"]
+        cur_counters = {pub: (v["rx"], v["tx"]) for pub, v in live.items()}
+        _bw_prev["t"], _bw_prev["peers"] = now, cur_counters
+
+    users, total_down, total_up = [], 0.0, 0.0
+    if 0.5 <= dt <= 120:  # first call / long gap: no meaningful rate yet
+        for pub, (rx, tx) in cur_counters.items():
+            if pub not in prev or pub not in by_pub:
+                continue
+            prx, ptx = prev[pub]
+            up = max(0, rx - prx) * 8 / dt / 1e6      # client -> server
+            down = max(0, tx - ptx) * 8 / dt / 1e6    # server -> client (what fair-sharing shapes)
+            total_up += up
+            total_down += down
+            if up + down >= 0.02:
+                users.append({"id": by_pub[pub][0], "name": by_pub[pub][1],
+                              "down_mbit": round(down, 2), "up_mbit": round(up, 2)})
+
+    q = _qos_run("status")
+    line = q.get("applied_rate_mbit") or q.get("auto_mbit") or 0
+    manual = _read_bandwidth()
+    if manual:
+        line = int(manual * 0.9)
+    util = round(total_down * 100 / line, 1) if line else None
+    busy = util is not None and util >= 80
+    fair = (line / len(users)) if (line and users) else None
+    for u in users:
+        u["limited"] = bool(busy and fair and u["down_mbit"] > fair * 0.9)
+    users.sort(key=lambda u: u["down_mbit"], reverse=True)
+    return {
+        "mode": q.get("mode"), "line_mbit": line or None,
+        "total_down_mbit": round(total_down, 2), "total_up_mbit": round(total_up, 2),
+        "utilization_pct": util, "busy": busy,
+        "fair_share_mbit": round(fair, 2) if fair else None,
+        "queue": _tc_queue_stats(),
+        "users": users[:15], "active_users": len(users),
+    }
+
+
 @app.get("/api/usage/summary")
 def usage_summary(_=Depends(auth.require_admin)):
     """Server-wide traffic totals for today / this month / all time, for the

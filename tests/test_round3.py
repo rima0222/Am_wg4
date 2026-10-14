@@ -108,6 +108,50 @@ assert c.get("/api/peers", headers=H).json()[0]["name"] == "New Name"
 assert c.put(f"/api/peers/{b['id']}", json={"name": " "}, headers=H).status_code == 400
 assert calls == [] or all(x[0] != "remove" for x in calls), calls
 print("CHECK 10 ok: rename works, empty rejected, user is never removed from the tunnel")
+# fair bandwidth sharing: endpoint writes env + runs the script (stubbed tc)
+import subprocess, shutil
+stub = tempfile.mkdtemp(); state = os.path.join(stub, "state")
+open(os.path.join(stub, "tc"), "w").write(f"""#!/usr/bin/env bash
+case "$1 $2" in
+ "qdisc show") [ -f {state} ] && cat {state} || echo "qdisc noqueue";;
+ "qdisc replace") if [[ "$*" == *cake* ]]; then echo "qdisc cake 8001: root" > {state}; else echo "qdisc fq_codel 8001: root" > {state}; fi;;
+esac
+""")
+open(os.path.join(stub, "curl"), "w").write("#!/usr/bin/env bash\nexit 0\n")
+open(os.path.join(stub, "ip"), "w").write('#!/usr/bin/env bash\nexit 0\n')
+for f in ("tc", "ip", "curl"): os.chmod(os.path.join(stub, f), 0o755)
+os.environ["PATH"] = stub + ":" + os.environ["PATH"]
+env_file = Path(tempfile.mktemp()); env_file.write_text("PANEL_PORT=8787\nOTHER=keep\n")
+config.ENV_FILE = env_file
+r = c.put("/api/admin/qos", json={"bandwidth_mbit": 200}, headers=H); assert r.status_code == 200, r.text
+assert r.json()["mode"] == "cake" and r.json()["applied_rate_mbit"] == 180, r.json()
+txt = env_file.read_text(); assert "AWG_BANDWIDTH_MBIT=200" in txt and "OTHER=keep" in txt
+g = c.get("/api/admin/qos", headers=H).json(); assert g["bandwidth_mbit"] == 200 and g["mode"] == "cake", g
+r = c.put("/api/admin/qos", json={"bandwidth_mbit": 0}, headers=H).json()
+assert "AWG_BANDWIDTH_MBIT" not in env_file.read_text()
+# empty = server measures itself (stub curl returns instantly -> big plausible number), cached in env, used as-is
+assert r["mode"] == "cake" and r["auto_mbit"] > 100 and r["applied_rate_mbit"] == r["auto_mbit"], r
+assert "AWG_BANDWIDTH_AUTO=" in env_file.read_text()
+assert c.put("/api/admin/qos", json={"bandwidth_mbit": -5}, headers=H).status_code == 400
+print("CHECK 11 ok: fair-sharing endpoint: cake at 90% of line speed, falls back to fq_codel, env preserved")
+# live bandwidth view: two polls, counters move -> per-user rates + "slowed" flag when near line speed
+open(os.path.join(stub, "tc"), "a").write("""
+case "$1 $2 $3" in
+ "-s qdisc show") echo "qdisc cake 8001: root refcnt 2 bandwidth 100Mbit"; echo " Sent 1000 bytes 10 pkt (dropped 7, overlimits 0 requeues 0)"; echo " backlog 3000b 2p requeues 0"; echo "  av_delay 4.5ms";;
+esac
+""")
+c.put("/api/admin/qos", json={"bandwidth_mbit": 100}, headers=H)   # shaped line = 90 Mbit/s
+awg.dump = lambda: {k: dict(v) for k, v in live.items()}  # undo the slow_dump used in check 9
+pubkey_b = [p for p in live][0]
+live[pubkey_b].update({"rx": 0, "tx": 0})
+c.get("/api/server/bandwidth", headers=H)          # baseline sample
+time.sleep(1.0)
+live[pubkey_b].update({"rx": 1_000_000, "tx": 11_500_000})   # ~92 Mbit/s down in ~1 s
+bw = c.get("/api/server/bandwidth", headers=H).json()
+assert bw["mode"] == "cake" and bw["line_mbit"] == 90, bw
+assert bw["users"] and bw["users"][0]["down_mbit"] > 60 and bw["busy"] is True and bw["users"][0]["limited"] is True, bw
+assert bw["queue"]["drops"] == 7 and bw["queue"]["backlog_bytes"] == 3000 and bw["queue"]["avg_delay_ms"] == 4.5, bw["queue"]
+print("CHECK 12 ok: live bandwidth view: per-user rates, utilization, 'slowed' flag, queue drops/delay")
 print("\nROUND 3 ALL PASSED")
 
 # rename (display name only) - separate section appended after the main checks

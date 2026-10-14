@@ -534,6 +534,7 @@ async function openSettingsModal() {
     const s = await res.json();
     document.getElementById("settings-endpoint").value = s.endpoint || "";
   }
+  loadQos();
 }
 
 async function submitSettings() {
@@ -551,6 +552,30 @@ async function submitSettings() {
   closeModal("settings-modal");
   alert("Credentials updated. Please sign in again.");
   logout();
+}
+
+function qosText(q) {
+  if (q.mode === "cake") return `Active: per-user fair sharing (cake) at ${q.applied_rate_mbit || "?"} Mbit/s` +
+    (q.bandwidth_mbit ? " (your value)." : ` (measured automatically: ${q.auto_mbit} Mbit/s).`);
+  if (q.mode === "fq_codel") return "Active: basic fair queueing. The server will measure its line speed automatically when no one is using it (checked every ~10 min), or enter it above.";
+  return "Not active (this server's kernel may not support it).";
+}
+
+async function loadQos() {
+  const res = await fetch("/api/admin/qos", { headers: authHeaders(false) });
+  if (!res.ok) return;
+  const q = await res.json();
+  document.getElementById("qos-mbit").value = q.bandwidth_mbit || "";
+  document.getElementById("qos-status").textContent = qosText(q);
+}
+
+async function saveQos() {
+  const v = parseInt(document.getElementById("qos-mbit").value, 10) || 0;
+  const el = document.getElementById("qos-status");
+  el.textContent = "Applying...";
+  const res = await fetch("/api/admin/qos", { method: "PUT", headers: authHeaders(), body: JSON.stringify({ bandwidth_mbit: v }) });
+  const q = await res.json();
+  el.textContent = res.ok ? qosText(q) : (q.detail || "Failed");
 }
 
 async function submitEndpoint() {
@@ -623,7 +648,29 @@ function barRow(label, pct, detail) {
     <span class="srv-v mono">${detail}</span></div>`;
 }
 
+async function loadBandwidth() {
+  const res = await fetch("/api/server/bandwidth", { headers: authHeaders(false) });
+  const el = document.getElementById("server-bw");
+  if (!res.ok) { el.textContent = ""; return; }
+  const b = await res.json();
+  const mode = b.mode === "cake" ? "fair sharing: ON (per user)" : b.mode === "fq_codel" ? "fair sharing: basic" : "fair sharing: off";
+  let head = barRow("Download load", b.utilization_pct ?? 0,
+    b.line_mbit ? `${b.total_down_mbit} / ${b.line_mbit} Mbit/s` : `${b.total_down_mbit} Mbit/s`);
+  const q = b.queue || {};
+  head += `<div class="hint srv-hint">${mode} · upload ${b.total_up_mbit} Mbit/s · ${b.active_users} active user(s)` +
+    (b.fair_share_mbit ? ` · equal share ≈ ${b.fair_share_mbit} Mbit/s` : "") +
+    (q.avg_delay_ms != null ? ` · queue delay ${q.avg_delay_ms} ms` : "") +
+    (q.drops != null ? ` · dropped packets ${q.drops}` : "") + `</div>`;
+  const rows = (b.users || []).map((u) => `
+    <tr><td>${escapeHtml(u.name)}</td>
+      <td class="mono">${u.down_mbit}</td><td class="mono">${u.up_mbit}</td>
+      <td>${u.limited ? '<span class="disabled-tag">slowed (heavy)</span>' : '<span class="note">free</span>'}</td></tr>`).join("");
+  el.innerHTML = head + (rows ? `<table class="srv-table"><thead><tr><th>User</th><th>↓ Mbit/s</th><th>↑ Mbit/s</th><th>State</th></tr></thead><tbody>${rows}</tbody></table>`
+    : '<div class="hint srv-hint">No active traffic right now.</div>');
+}
+
 async function loadServer() {
+  loadBandwidth();
   const [ovRes, prRes] = await Promise.all([
     fetch("/api/server/overview", { headers: authHeaders(false) }),
     fetch(`/api/server/processes?sort=${serverSort}&limit=15`, { headers: authHeaders(false) }),

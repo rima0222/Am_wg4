@@ -21,7 +21,10 @@ fi
 # 2. tunnel interface missing (e.g. crashed)? start it (a no-op while it is up)
 ip link show "$IFACE" >/dev/null 2>&1 || systemctl start "awg-quick@${IFACE}"
 
-# 3. firewall rule for the panel port can silently disappear (ufw reset/reinstall)
+# 3. fair-queue on the tunnel disappears whenever the interface restarts - restore it
+"$(dirname "$0")/qos.sh" ensure >/dev/null 2>&1 || true
+
+# 4. firewall rule for the panel port can silently disappear (ufw reset/reinstall)
 if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
   ufw status | grep -qE "^${PORT}/tcp +ALLOW" || ufw allow "${PORT}/tcp" >/dev/null 2>&1
   # panel also reachable through the VPN itself (https://<server tunnel IP>:PORT) as a fallback
